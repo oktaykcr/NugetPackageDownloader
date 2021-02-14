@@ -1,0 +1,272 @@
+﻿@page "/"
+@using NugetPackageDownloader.Data
+
+@inject NugetService NugetService
+
+@inject IJSRuntime JSRuntime
+
+<div class="container">
+    <h3>Nuget Client</h3>
+
+    <div class="form-row align-items-center">
+        <div class="col-sm-10">
+            <div class="input-group mb-2">
+                <div class="input-group-prepend">
+                    <div class="input-group-text"><span class="oi oi-magnifying-glass"></span></div>
+                </div>
+                <input disabled="@isDownload" placeholder="Search Package..." class="form-control" @oninput=@OnInputChange @onkeydown="@OnSearchInputEnter" />
+            </div>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(packageId))
+        {
+            <div class="col">
+                <button disabled="@isDownload" class="btn btn-primary mb-2" @onclick="Search">Search</button>
+            </div>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(packageId))
+    {
+        @if (autoCompletePackageIdList.Count > 0)
+        {
+            <div class="form-row">
+                <div class="col-md-6 mb-3">
+                    <label for="validationDefault01">Package Name</label>
+                    <select disabled="@isDownload" class="form-control selectpicker" @onchange=@SelectPackageName>
+                        <option>Select Package Name</option>
+                        @foreach (var name in autoCompletePackageIdList)
+                        {
+                            <option value="@name">@name</option>
+                        }
+                    </select>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(selectedPackageId) && packageVersionList.Count > 0)
+                {
+                    <div class="col-md-6 mb-3">
+                        <label for="validationDefault01">Package Version</label>
+                        <select disabled="@isDownload" class="form-control selectpicker" @onchange=@SelectPackageVersion>
+                            <option>Select Package Version</option>
+                            @foreach (var version in packageVersionList)
+                            {
+                                <option value="@version">@version</option>
+                            }
+                        </select>
+                    </div>
+                }
+
+            </div>
+
+            @if (packageMetadata != null)
+            {
+                <div class="row">
+                    <div class="col-sm-6">
+                        <div class="card">
+                            <img class="card-img-top w-25 rounded mx-auto d-block" src="@packageMetadata.IconUrl" alt="Card image cap">
+                            <div class="card-body">
+                                <h5 class="card-title">@packageMetadata.SecondaryId</h5>
+                                <h6 class="card-subtitle mb-2 text-muted">@packageMetadata.Version</h6>
+                                <p class="card-text">@packageMetadata.Summary</p>
+                                @if (packageMetadata.DependencyGroups != null)
+                                {
+                                    <select disabled="@isDownload" class="form-control selectpicker" @onchange=@SelectFramework>
+                                        <option>Select Framework</option>
+                                        @foreach (var dependencyGroup in packageMetadata.DependencyGroups)
+                                        {
+                                            <option value="@dependencyGroup.TargetFramework.DotNetFrameworkName">@dependencyGroup.TargetFramework.DotNetFrameworkName</option>
+                                        }
+                                    </select>
+                                }
+                            </div>
+                            @if (!string.IsNullOrEmpty(selectedFramework))
+                            {
+                                <div class="card-body">
+                                    <button @onclick=@Download disabled="@isDownload" class="btn btn-primary mb-2">Download</button>
+                                    @if (downloadMessages.Count > 0)
+                                    {
+                                        <textarea class="form-control" id="exampleFormControlTextarea1" rows="3" readonly>@(string.Join(Environment.NewLine, downloadMessages))</textarea>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+
+                    @if (dependentPackageList.Count() > 0)
+                    {
+                        <div class="col-sm-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    Dependencies (@dependentPackageList.Count())
+                                </div>
+                                <ul class="list-group list-group-flush">
+                                    @foreach (var dependency in dependentPackageList)
+                                    {
+                                        <li class="list-group-item">@(dependency.Id + " - ")<a href=@($"https://api.nuget.org/v3-flatcontainer/{dependency.Id}/{dependency.VersionRange}/{dependency.Id}.{dependency.VersionRange}.nupkg") style="font-weight:bold">@dependency.VersionRange</a></li>
+                                    }
+                                </ul>
+                            </div>
+                        </div>
+                    }
+
+                </div>
+
+                <br />
+
+                @if (packageMetadata.DependencyGroups != null)
+                {
+                    <div class="accordion" id="accordion">
+                        @foreach (var dependencyGroup in packageMetadata.DependencyGroups)
+                        {
+                            <div class="card">
+                                <div class="card-header" id="@("heading" + dependencyGroup.TargetFramework.DotNetFrameworkName)">
+                                    <h5 class="mb-0">
+                                        <button class="btn btn-link collapsed" type="button" data-toggle="collapse" data-target="@("#" + dependencyGroup.TargetFramework.DotNetFrameworkName)" aria-expanded="false" aria-controls="@dependencyGroup.TargetFramework.DotNetFrameworkName">
+                                            @dependencyGroup.TargetFramework.DotNetFrameworkName
+                                        </button>
+                                    </h5>
+                                </div>
+
+                                <div id="@dependencyGroup.TargetFramework.DotNetFrameworkName" aria-labelledby="@("heading" + dependencyGroup.TargetFramework.DotNetFrameworkName)" class="collapse" data-parent="#accordion">
+                                    <div class="card-body">
+                                        <ul>
+                                            @if (dependencyGroup.Packages.Count > 0)
+                                            {
+                                                @foreach (var package in dependencyGroup.Packages)
+                                                {
+                                                    <li>@package.Id<span style="font-weight:bold">@package.VersionRange</span></li>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <li>No Dependencies</li>
+                                            }
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        }
+    }
+
+</div>
+
+@code {
+    private string packageId;
+    private string selectedPackageId;
+    private string selectedVersion;
+    private string selectedFramework;
+    private PackageMetadata packageMetadata;
+    private bool isDownload = false;
+
+    private IList<string> packageVersionList = new List<string>();
+    private IList<string> autoCompletePackageIdList = new List<string>();
+    private IList<Package> dependentPackageList = new List<Package>();
+    private IList<string> downloadMessages = new List<string>();
+
+    private async Task OnSearchInputEnter(KeyboardEventArgs e)
+    {
+        if (e.Code == "Enter" || e.Code == "NumpadEnter")
+        {
+            await Search();
+        }
+    }
+
+    private void OnInputChange(ChangeEventArgs e)
+    {
+        Reset();
+        packageId = e.Value.ToString();
+    }
+
+    private void Reset()
+    {
+        packageId = string.Empty;
+        packageVersionList.Clear();
+        autoCompletePackageIdList.Clear();
+        selectedVersion = string.Empty;
+        selectedPackageId = string.Empty;
+        packageMetadata = null;
+        selectedFramework = string.Empty;
+        dependentPackageList.Clear();
+        downloadMessages.Clear();
+        isDownload = false;
+    }
+
+    protected async Task Search()
+    {
+        autoCompletePackageIdList = await NugetService.GetPackageAutoComplete(packageId);
+    }
+
+    protected async Task SelectPackageName(ChangeEventArgs e)
+    {
+        packageMetadata = null;
+        selectedVersion = string.Empty;
+        selectedPackageId = string.Empty;
+        packageVersionList.Clear();
+        selectedFramework = string.Empty;
+        dependentPackageList.Clear();
+
+        selectedPackageId = e.Value.ToString();
+        packageVersionList = await NugetService.ListPackageVersions(selectedPackageId);
+    }
+
+    protected async Task SelectPackageVersion(ChangeEventArgs e)
+    {
+        packageMetadata = null;
+        selectedVersion = string.Empty;
+        selectedFramework = string.Empty;
+        dependentPackageList.Clear();
+
+        selectedVersion = e.Value.ToString();
+        packageMetadata = await NugetService.GetPackageMetadata(selectedPackageId, selectedVersion);
+    }
+
+    protected async Task SelectFramework(ChangeEventArgs e)
+    {
+        dependentPackageList.Clear();
+        selectedFramework = e.Value.ToString();
+        if (selectedFramework.Contains(",") && selectedFramework.Contains("v"))
+        {
+            var frameworkName = selectedFramework.Split(",")[0];
+            var frameworkVersion = selectedFramework.Split(",")[1].Split("v")[1];
+            await NugetService.GetAllDependencies(frameworkName, frameworkVersion, selectedPackageId, selectedVersion, dependentPackageList, -1);
+        }
+        else
+        {
+            selectedFramework = null;
+        }
+    }
+
+    protected async Task Download()
+    {
+
+        List<ZipFile> zipFiles = new List<ZipFile>();
+
+        isDownload = true;
+        foreach (var dependency in dependentPackageList)
+        {
+            var name = $"{dependency.Id.ToLower()}.{dependency.VersionRange}.nupkg";
+            downloadMessages.Add($"Downloading {name}");
+            byte[] pContent = await NugetService.DownloadPackage(dependency.Id, dependency.VersionRange);
+            zipFiles.Add(new ZipFile { Name = name, Content = pContent });
+
+            downloadMessages.Add($"Download process finished {name}");
+            this.StateHasChanged();
+        }
+
+        var fileName = $"{selectedPackageId.ToLower()}.{selectedVersion}.nupkg";
+        downloadMessages.Add($"Downloading {fileName}");
+        byte[] content = await NugetService.DownloadPackage(selectedPackageId, selectedVersion);
+        zipFiles.Add(new ZipFile { Name = fileName, Content = content });
+        isDownload = false;
+        downloadMessages.Add($"Download process finished {fileName}");
+        downloadMessages.Add($"Zip...");
+        this.StateHasChanged();
+        var zipContent = NugetService.ZipFiles(zipFiles);
+
+        // Send the data to JS to actually download the file
+        await JSRuntime.InvokeVoidAsync("BlazorDownloadFile", selectedPackageId.ToLower() + ".zip", "application/zip", zipContent);
+    }
+}
